@@ -24,10 +24,17 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Usernames collection
+    // Usernames collection - for username uniqueness
     match /usernames/{username} {
-      allow read: if true; // Allow reading usernames for availability checks
-      allow write: if request.auth != null; // Allow authenticated users to claim usernames
+      allow read: if true;
+      allow write: if request.auth != null && (
+        // Allow if no user has claimed the username
+        !exists(/databases/$(database)/documents/usernames/$(username)) ||
+        // Or if the current user owns this username
+        get(/databases/$(database)/documents/usernames/$(username)).data.uid == request.auth.uid ||
+        // Or if the username is being released (uid set to null)
+        request.resource.data.uid == null
+      );
     }
 
     // Startups collection
