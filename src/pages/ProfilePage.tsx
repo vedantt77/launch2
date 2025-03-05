@@ -243,36 +243,39 @@ export function ProfilePage() {
         avatarUrl = await getDownloadURL(avatarRef);
       }
 
-      // Update username in the usernames collection if changed
-      if (formData.username !== userProfile.username) {
+      // First, update the username in the usernames collection if changed
+      if (formData.username.toLowerCase() !== userProfile.username.toLowerCase()) {
+        // Remove old username
+        if (userProfile.username) {
+          await setDoc(doc(db, 'usernames', userProfile.username.toLowerCase()), {
+            uid: null,
+            username: null
+          });
+        }
+
         // Add new username
         await setDoc(doc(db, 'usernames', formData.username.toLowerCase()), {
           uid: user.uid,
           username: formData.username.toLowerCase()
         });
-
-        // Remove old username if it exists
-        if (userProfile.username) {
-          const oldUsernameDoc = doc(db, 'usernames', userProfile.username.toLowerCase());
-          const oldUsernameSnapshot = await getDoc(oldUsernameDoc);
-          if (oldUsernameSnapshot.exists() && oldUsernameSnapshot.data().uid === user.uid) {
-            await setDoc(oldUsernameDoc, { uid: null, username: null });
-          }
-        }
       }
 
-      // Update user profile
+      // Then update the user profile
       const updatedProfile = {
-        ...userProfile,
         displayName: formData.displayName,
         username: formData.username.toLowerCase(),
         bio: formData.bio || '',
         avatarUrl,
+        email: user.email,
         updatedAt: new Date()
       };
 
-      await setDoc(doc(db, 'users', user.uid), updatedProfile);
-      setUserProfile(updatedProfile);
+      await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
+
+      setUserProfile(prev => ({
+        ...prev,
+        ...updatedProfile
+      }));
 
       toast({
         title: "Success",
