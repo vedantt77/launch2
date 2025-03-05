@@ -8,7 +8,7 @@ import { shareUrl } from '@/lib/utils/share';
 import { memo, useState } from 'react';
 import { useAuthContext } from '@/providers/AuthProvider';
 import { useNavigate } from 'react-router-dom';
-import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -70,7 +70,7 @@ export const LaunchListItem = memo(function LaunchListItem({ launch }: LaunchLis
 
       if (!launchDoc.exists()) {
         // Create the document if it doesn't exist
-        await updateDoc(launchRef, {
+        await setDoc(launchRef, {
           upvotes: 1,
           upvotedBy: [user.uid]
         });
