@@ -47,8 +47,8 @@ interface UserProfile {
 interface ProfileFormData {
   displayName: string;
   username: string;
-  email: string;
-  bio: string;
+  email?: string;
+  bio?: string;
   avatar?: FileList;
 }
 
@@ -62,22 +62,79 @@ export function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [usernameError, setUsernameError] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<{
+    isValid: boolean;
+    message: string;
+    isChecking: boolean;
+  }>({
+    isValid: true,
+    message: '',
+    isChecking: false
+  });
 
   const { register, handleSubmit, formState: { errors }, reset, watch } = useForm<StartupFormData>();
-  const { register: registerProfile, handleSubmit: handleSubmitProfile, formState: { errors: profileErrors }, setValue } = useForm<ProfileFormData>();
+  const { register: registerProfile, handleSubmit: handleSubmitProfile, formState: { errors: profileErrors }, setValue, watch: watchProfile } = useForm<ProfileFormData>();
 
-  const validateUsername = async (username: string) => {
-    if (username === userProfile?.username) return true;
-    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-      return 'Username must be 3-20 characters and can only contain letters, numbers, and underscores';
-    }
-    const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
-    if (usernameDoc.exists()) {
-      return 'Username is already taken';
-    }
-    return true;
+  // Watch username field for real-time validation
+  const username = watchProfile('username');
+
+  // Debounce function
+  const debounce = (func: Function, wait: number) => {
+    let timeout: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
   };
+
+  // Check username availability
+  const checkUsername = async (username: string) => {
+    if (!username || username === userProfile?.username) {
+      setUsernameStatus({
+        isValid: true,
+        message: '',
+        isChecking: false
+      });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+      setUsernameStatus({
+        isValid: false,
+        message: 'Username must be 3-20 characters and can only contain letters, numbers, and underscores',
+        isChecking: false
+      });
+      return;
+    }
+
+    setUsernameStatus(prev => ({ ...prev, isChecking: true }));
+    
+    try {
+      const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
+      
+      setUsernameStatus({
+        isValid: !usernameDoc.exists(),
+        message: usernameDoc.exists() ? 'Username is already taken' : 'Username is available',
+        isChecking: false
+      });
+    } catch (error) {
+      setUsernameStatus({
+        isValid: false,
+        message: 'Error checking username availability',
+        isChecking: false
+      });
+    }
+  };
+
+  // Debounced username check
+  const debouncedCheckUsername = debounce(checkUsername, 500);
+
+  // Watch username changes
+  useEffect(() => {
+    if (username) {
+      debouncedCheckUsername(username);
+    }
+  }, [username]);
 
   useEffect(() => {
     async function fetchData() {
@@ -130,24 +187,34 @@ export function ProfilePage() {
   const handleProfileUpdate = async (formData: ProfileFormData) => {
     if (!user || !userProfile) return;
 
+    if (!formData.displayName || !formData.username) {
+      toast({
+        title: 'Error',
+        description: 'Display name and username are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!usernameStatus.isValid) {
+      toast({
+        title: 'Error',
+        description: usernameStatus.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
-    setUsernameError('');
 
     try {
-      // Validate username
-      const usernameValidation = await validateUsername(formData.username);
-      if (typeof usernameValidation === 'string') {
-        setUsernameError(usernameValidation);
-        return;
-      }
-
       let avatarUrl = userProfile.avatarUrl;
 
       // Handle avatar upload if a new file is selected
       if (formData.avatar?.length > 0) {
         const file = formData.avatar[0];
-        if (file.size > 500 * 1024) {
-          throw new Error('Avatar file size must be less than 500KB');
+        if (file.size > 200 * 1024) {
+          throw new Error('Profile picture must be less than 200KB');
         }
 
         const fileExtension = file.name.split('.').pop();
@@ -157,12 +224,12 @@ export function ProfilePage() {
         avatarUrl = await getDownloadURL(avatarRef);
       }
 
-      // Update username in the usernames collection
+      // Update username in the usernames collection if changed
       if (formData.username !== userProfile.username) {
         // Remove old username
-        await setDoc(doc(db, 'usernames', userProfile.username), { uid: null }, { merge: true });
+        await setDoc(doc(db, 'usernames', userProfile.username.toLowerCase()), { uid: null });
         // Add new username
-        await setDoc(doc(db, 'usernames', formData.username), { uid: user.uid });
+        await setDoc(doc(db, 'usernames', formData.username.toLowerCase()), { uid: user.uid });
       }
 
       // Update user profile
@@ -170,8 +237,8 @@ export function ProfilePage() {
         ...userProfile,
         displayName: formData.displayName,
         username: formData.username,
-        email: formData.email,
-        bio: formData.bio,
+        email: formData.email || userProfile.email,
+        bio: formData.bio || '',
         avatarUrl,
         updatedAt: new Date()
       };
@@ -303,7 +370,7 @@ export function ProfilePage() {
                     <AvatarImage src={userProfile.avatarUrl} alt={userProfile.displayName} />
                   ) : (
                     <AvatarFallback>
-                      {userProfile?.displayName?.charAt(0) || user.email?.charAt(0)}
+                      {userProfile?.displayName?.charAt(0) || user?.email?.charAt(0)}
                     </AvatarFallback>
                   )}
                 </Avatar>
@@ -324,7 +391,7 @@ export function ProfilePage() {
             {isEditingProfile ? (
               <form onSubmit={handleSubmitProfile(handleProfileUpdate)} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="displayName">Display Name</Label>
+                  <Label htmlFor="displayName">Display Name *</Label>
                   <Input
                     id="displayName"
                     {...registerProfile('displayName', { required: 'Display name is required' })}
@@ -335,7 +402,7 @@ export function ProfilePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="username">Username *</Label>
                   <Input
                     id="username"
                     {...registerProfile('username', {
@@ -345,23 +412,20 @@ export function ProfilePage() {
                         message: 'Username must be 3-20 characters and can only contain letters, numbers, and underscores'
                       }
                     })}
+                    className={
+                      usernameStatus.isChecking 
+                        ? 'opacity-50' 
+                        : usernameStatus.isValid 
+                          ? 'border-green-500' 
+                          : 'border-red-500'
+                    }
                   />
-                  {(profileErrors.username || usernameError) && (
-                    <p className="text-sm text-destructive">
-                      {profileErrors.username?.message || usernameError}
+                  {usernameStatus.isChecking ? (
+                    <p className="text-sm text-muted-foreground">Checking availability...</p>
+                  ) : (
+                    <p className={`text-sm ${usernameStatus.isValid ? 'text-green-500' : 'text-red-500'}`}>
+                      {usernameStatus.message}
                     </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    {...registerProfile('email', { required: 'Email is required' })}
-                  />
-                  {profileErrors.email && (
-                    <p className="text-sm text-destructive">{profileErrors.email.message}</p>
                   )}
                 </div>
 
@@ -375,7 +439,7 @@ export function ProfilePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="avatar">Profile Picture</Label>
+                  <Label htmlFor="avatar">Profile Picture (Max 200KB)</Label>
                   <Input
                     id="avatar"
                     type="file"
@@ -383,14 +447,14 @@ export function ProfilePage() {
                     {...registerProfile('avatar')}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Maximum file size: 500KB
+                    Maximum file size: 200KB
                   </p>
                 </div>
 
                 <div className="flex justify-end gap-4">
                   <Button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !usernameStatus.isValid || usernameStatus.isChecking}
                   >
                     {isSubmitting ? 'Saving...' : 'Save Changes'}
                   </Button>
