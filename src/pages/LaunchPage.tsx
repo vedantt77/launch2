@@ -14,10 +14,8 @@ interface ListItem extends Launch {
 const ROTATION_INTERVAL = 10 * 60 * 1000; // 10 minutes in milliseconds
 
 export function LaunchPage() {
-  const [activeTab, setActiveTab] = useState('weekly');
   const [allLaunches, setAllLaunches] = useState<Launch[]>([]);
   const [rotatedWeeklyLaunches, setRotatedWeeklyLaunches] = useState<Launch[]>([]);
-  const [rotatedRegularLaunches, setRotatedRegularLaunches] = useState<Launch[]>([]);
   const [rotatedBoostedLaunches, setRotatedBoostedLaunches] = useState<Launch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -25,6 +23,7 @@ export function LaunchPage() {
   useEffect(() => {
     const fetchLaunches = async () => {
       try {
+        // Only fetch launches once and store them in state
         const launches = await getLaunches();
         setAllLaunches(launches);
         setIsLoading(false);
@@ -47,13 +46,8 @@ export function LaunchPage() {
     allLaunches.filter(launch => launch.listingType === 'boosted'),
     [allLaunches]
   );
-  
-  const regularLaunches = useMemo(() => 
-    allLaunches.filter(launch => !launch.listingType || launch.listingType === 'regular'),
-    [allLaunches]
-  );
 
-  const weeklyRegularLaunches = useMemo(async () => {
+  const weeklyLaunches = useMemo(async () => {
     const weeklyLaunches = await getWeeklyLaunches();
     return weeklyLaunches.filter(launch => !launch.listingType || launch.listingType === 'regular');
   }, []);
@@ -72,11 +66,11 @@ export function LaunchPage() {
     return [...array.slice(index), ...array.slice(0, index)];
   };
 
-  const insertBoostedLaunches = (launches: Launch[], section: 'weekly' | 'all'): ListItem[] => {
+  const insertBoostedLaunches = (launches: Launch[]): ListItem[] => {
     if (!rotatedBoostedLaunches.length || !launches.length) {
       return launches.map((launch, index) => ({
         ...launch,
-        uniqueKey: `${section}-regular-${launch.id}-${index}`
+        uniqueKey: `weekly-regular-${launch.id}-${index}`
       }));
     }
 
@@ -88,14 +82,14 @@ export function LaunchPage() {
     launches.forEach((launch, index) => {
       result.push({
         ...launch,
-        uniqueKey: `${section}-regular-${launch.id}-${index}-${timestamp}`
+        uniqueKey: `weekly-regular-${launch.id}-${index}-${timestamp}`
       });
       
       if ((index + 1) % spacing === 0 && boostedIndex < rotatedBoostedLaunches.length) {
         const boostedLaunch = rotatedBoostedLaunches[boostedIndex];
         result.push({
           ...boostedLaunch,
-          uniqueKey: `${section}-boosted-${boostedLaunch.id}-${index}-${timestamp}`
+          uniqueKey: `weekly-boosted-${boostedLaunch.id}-${index}-${timestamp}`
         });
         boostedIndex++;
       }
@@ -106,7 +100,7 @@ export function LaunchPage() {
       const boostedLaunch = rotatedBoostedLaunches[boostedIndex];
       result.push({
         ...boostedLaunch,
-        uniqueKey: `${section}-boosted-${boostedLaunch.id}-remaining-${boostedIndex}-${timestamp}`
+        uniqueKey: `weekly-boosted-${boostedLaunch.id}-remaining-${boostedIndex}-${timestamp}`
       });
       boostedIndex++;
     }
@@ -117,13 +111,11 @@ export function LaunchPage() {
   // Update rotations based on current time
   useEffect(() => {
     const updateRotations = async () => {
-      const weeklyLaunches = await weeklyRegularLaunches;
-      const weeklyIndex = getCurrentRotationIndex(weeklyLaunches.length);
-      const regularIndex = getCurrentRotationIndex(regularLaunches.length);
+      const weeklyLaunchList = await weeklyLaunches;
+      const weeklyIndex = getCurrentRotationIndex(weeklyLaunchList.length);
       const boostedIndex = getCurrentRotationIndex(boostedLaunches.length);
 
-      setRotatedWeeklyLaunches(rotateArrayByIndex(weeklyLaunches, weeklyIndex));
-      setRotatedRegularLaunches(rotateArrayByIndex(regularLaunches, regularIndex));
+      setRotatedWeeklyLaunches(rotateArrayByIndex(weeklyLaunchList, weeklyIndex));
       setRotatedBoostedLaunches(rotateArrayByIndex(boostedLaunches, boostedIndex));
     };
 
@@ -144,7 +136,7 @@ export function LaunchPage() {
     }, timeUntilNextRotation);
 
     return () => clearTimeout(initialTimeout);
-  }, [weeklyRegularLaunches, regularLaunches, boostedLaunches]);
+  }, [weeklyLaunches, boostedLaunches]);
 
   if (isLoading) {
     return (
@@ -176,26 +168,14 @@ export function LaunchPage() {
             ))}
           </div>
 
-          <Tabs defaultValue="weekly" className="w-full" onValueChange={setActiveTab}>
-            <TabsList className="grid w-full max-w-[300px] sm:max-w-[400px] grid-cols-2 mx-auto mb-6 sm:mb-8">
+          <Tabs defaultValue="weekly" className="w-full">
+            <TabsList className="grid w-full max-w-[200px] grid-cols-1 mx-auto mb-6 sm:mb-8">
               <TabsTrigger value="weekly">Weekly</TabsTrigger>
-              <TabsTrigger value="all">All</TabsTrigger>
             </TabsList>
 
             <TabsContent value="weekly" className="mt-4 sm:mt-6">
               <div className="space-y-4">
-                {insertBoostedLaunches(rotatedWeeklyLaunches, 'weekly').map((launch) => (
-                  <LaunchListItem 
-                    key={launch.uniqueKey}
-                    launch={launch}
-                  />
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="all" className="mt-4 sm:mt-6">
-              <div className="space-y-4">
-                {insertBoostedLaunches(rotatedRegularLaunches, 'all').map((launch) => (
+                {insertBoostedLaunches(rotatedWeeklyLaunches).map((launch) => (
                   <LaunchListItem 
                     key={launch.uniqueKey}
                     launch={launch}
