@@ -16,6 +16,14 @@ service cloud.firestore {
       allow write: if false; // Only manually add admins for security
     }
 
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if request.auth != null && userId == request.auth.uid;
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // Startups collection
     match /startups/{startupId} {
       allow read: if true;
