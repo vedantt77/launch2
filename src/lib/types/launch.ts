@@ -8,4 +8,6 @@ export interface Launch {
   category: string;
   listingType?: 'premium' | 'boosted' | 'regular';
   doFollowBacklink?: boolean;
+  upvotes?: number;
+  upvotedBy?: string[];
 }
