@@ -25,9 +25,7 @@ googleProvider.addScope('profile');
 googleProvider.addScope('email');
 googleProvider.setCustomParameters({
   // Allow users to select account every time
-  prompt: 'select_account',
-  // Add allowed domains for sign in
-  hd: 'startups.ad' // Optional: Remove this line if you want to allow any domain
+  prompt: 'select_account'
 });
 
 // Export other services
