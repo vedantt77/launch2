@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuthContext } from '@/providers/AuthProvider';
@@ -110,14 +110,33 @@ export function ProfilePage() {
     setUsernameStatus(prev => ({ ...prev, isChecking: true }));
     
     try {
-      const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
+      // Check if username exists in usernames collection
+      const usernamesRef = collection(db, 'usernames');
+      const q = query(usernamesRef, where('username', '==', username.toLowerCase()));
+      const querySnapshot = await getDocs(q);
       
-      setUsernameStatus({
-        isValid: !usernameDoc.exists(),
-        message: usernameDoc.exists() ? 'Username is already taken' : 'Username is available',
-        isChecking: false
-      });
+      if (!querySnapshot.empty) {
+        const doc = querySnapshot.docs[0];
+        const data = doc.data();
+        
+        // Username is available if it's not assigned to any user or if it's assigned to the current user
+        const isAvailable = !data.uid || data.uid === user?.uid;
+        
+        setUsernameStatus({
+          isValid: isAvailable,
+          message: isAvailable ? 'Username is available' : 'Username is already taken',
+          isChecking: false
+        });
+      } else {
+        // Username is available if no document exists
+        setUsernameStatus({
+          isValid: true,
+          message: 'Username is available',
+          isChecking: false
+        });
+      }
     } catch (error) {
+      console.error('Error checking username:', error);
       setUsernameStatus({
         isValid: false,
         message: 'Error checking username availability',
@@ -226,18 +245,27 @@ export function ProfilePage() {
 
       // Update username in the usernames collection if changed
       if (formData.username !== userProfile.username) {
-        // Remove old username
-        await setDoc(doc(db, 'usernames', userProfile.username.toLowerCase()), { uid: null });
         // Add new username
-        await setDoc(doc(db, 'usernames', formData.username.toLowerCase()), { uid: user.uid });
+        await setDoc(doc(db, 'usernames', formData.username.toLowerCase()), {
+          uid: user.uid,
+          username: formData.username.toLowerCase()
+        });
+
+        // Remove old username if it exists
+        if (userProfile.username) {
+          const oldUsernameDoc = doc(db, 'usernames', userProfile.username.toLowerCase());
+          const oldUsernameSnapshot = await getDoc(oldUsernameDoc);
+          if (oldUsernameSnapshot.exists() && oldUsernameSnapshot.data().uid === user.uid) {
+            await setDoc(oldUsernameDoc, { uid: null, username: null });
+          }
+        }
       }
 
       // Update user profile
       const updatedProfile = {
         ...userProfile,
         displayName: formData.displayName,
-        username: formData.username,
-        email: formData.email || userProfile.email,
+        username: formData.username.toLowerCase(),
         bio: formData.bio || '',
         avatarUrl,
         updatedAt: new Date()
