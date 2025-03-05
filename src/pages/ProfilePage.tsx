@@ -331,7 +331,7 @@ export function ProfilePage() {
 
       const scheduledLaunchDate = calculateNextLaunchDate();
       const startupRef = doc(db, 'startups', user.uid);
-      const timestamp = serverTimestamp();
+      const timestamp = new Date();
       const startupData = {
         name: data.name,
         url: data.url,
@@ -349,7 +349,7 @@ export function ProfilePage() {
 
       setSubmittedStartup({
         ...startupData,
-        submittedAt: new Date(),
+        submittedAt: timestamp,
         scheduledLaunchDate,
         status: 'pending'
       });
