@@ -2,16 +2,28 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, Share2 } from 'lucide-react';
+import { ExternalLink, Share2, ChevronUp } from 'lucide-react';
 import { Launch } from '@/lib/types/launch';
 import { shareUrl } from '@/lib/utils/share';
-import { memo } from 'react';
+import { memo, useState } from 'react';
+import { useAuthContext } from '@/providers/AuthProvider';
+import { useNavigate } from 'react-router-dom';
+import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 interface LaunchListItemProps {
   launch: Launch;
 }
 
 export const LaunchListItem = memo(function LaunchListItem({ launch }: LaunchListItemProps) {
+  const { user } = useAuthContext();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [isUpvoting, setIsUpvoting] = useState(false);
+  const [upvotes, setUpvotes] = useState(launch.upvotes || 0);
+  const [hasUpvoted, setHasUpvoted] = useState(launch.upvotedBy?.includes(user?.uid || '') || false);
+
   const getLinkProps = () => {
     return launch.listingType === 'premium' || launch.listingType === 'boosted' || launch.doFollowBacklink 
       ? {} 
@@ -37,6 +49,65 @@ export const LaunchListItem = memo(function LaunchListItem({ launch }: LaunchLis
     };
 
     await shareUrl(shareData);
+  };
+
+  const handleUpvote = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to upvote startups",
+      });
+      navigate('/login');
+      return;
+    }
+
+    if (isUpvoting) return;
+
+    try {
+      setIsUpvoting(true);
+      const launchRef = doc(db, 'launches', launch.id);
+      const launchDoc = await getDoc(launchRef);
+
+      if (!launchDoc.exists()) {
+        // Create the document if it doesn't exist
+        await updateDoc(launchRef, {
+          upvotes: 1,
+          upvotedBy: [user.uid]
+        });
+        setUpvotes(1);
+        setHasUpvoted(true);
+      } else {
+        const currentUpvotedBy = launchDoc.data().upvotedBy || [];
+        const isAlreadyUpvoted = currentUpvotedBy.includes(user.uid);
+
+        if (isAlreadyUpvoted) {
+          // Remove upvote
+          await updateDoc(launchRef, {
+            upvotes: (launchDoc.data().upvotes || 1) - 1,
+            upvotedBy: arrayRemove(user.uid)
+          });
+          setUpvotes(prev => prev - 1);
+          setHasUpvoted(false);
+        } else {
+          // Add upvote
+          await updateDoc(launchRef, {
+            upvotes: (launchDoc.data().upvotes || 0) + 1,
+            upvotedBy: arrayUnion(user.uid)
+          });
+          setUpvotes(prev => prev + 1);
+          setHasUpvoted(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating upvote:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update upvote. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpvoting(false);
+    }
   };
 
   return (
@@ -87,6 +158,16 @@ export const LaunchListItem = memo(function LaunchListItem({ launch }: LaunchLis
         </div>
       </div>
       <div className="flex gap-2 w-full sm:w-auto">
+        <Button 
+          size="sm" 
+          variant="outline"
+          className={`flex-1 sm:flex-none ${hasUpvoted ? 'bg-primary/10' : ''}`}
+          onClick={handleUpvote}
+          disabled={isUpvoting}
+        >
+          <ChevronUp className="h-4 w-4 mr-1" />
+          <span>{upvotes}</span>
+        </Button>
         <Button 
           size="sm" 
           variant="outline"
