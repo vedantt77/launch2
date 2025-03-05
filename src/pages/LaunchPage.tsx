@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { LaunchListItem } from '@/components/launch/LaunchListItem';
 import { PremiumListing } from '@/components/launch/PremiumListing';
 import { AnimatedHeader } from '@/components/launch/AnimatedHeader';
@@ -168,22 +167,15 @@ export function LaunchPage() {
             ))}
           </div>
 
-          <Tabs defaultValue="weekly" className="w-full">
-            <TabsList className="grid w-full max-w-[200px] grid-cols-1 mx-auto mb-6 sm:mb-8">
-              <TabsTrigger value="weekly">Weekly</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="weekly" className="mt-4 sm:mt-6">
-              <div className="space-y-4">
-                {insertBoostedLaunches(rotatedWeeklyLaunches).map((launch) => (
-                  <LaunchListItem 
-                    key={launch.uniqueKey}
-                    launch={launch}
-                  />
-                ))}
-              </div>
-            </TabsContent>
-          </Tabs>
+          {/* Weekly launches with boosted listings */}
+          <div className="space-y-4">
+            {insertBoostedLaunches(rotatedWeeklyLaunches).map((launch) => (
+              <LaunchListItem 
+                key={launch.uniqueKey}
+                launch={launch}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
