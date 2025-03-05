@@ -40,7 +40,6 @@ interface UserProfile {
   email: string;
   bio?: string;
   avatarUrl?: string;
-  createdAt: Date;
   updatedAt: Date;
 }
 
@@ -237,7 +236,7 @@ export function ProfilePage() {
         }
 
         const fileExtension = file.name.split('.').pop();
-        const fileName = `avatars/${user.uid}-${Date.now()}.${fileExtension}`;
+        const fileName = `avatars/${user.uid}/${Date.now()}.${fileExtension}`;
         const avatarRef = ref(storage, fileName);
         await uploadBytes(avatarRef, file);
         avatarUrl = await getDownloadURL(avatarRef);
@@ -502,12 +501,6 @@ export function ProfilePage() {
                 ) : (
                   <p className="text-muted-foreground italic">No bio provided</p>
                 )}
-                <div>
-                  <Label>Member since</Label>
-                  <p className="text-muted-foreground">
-                    {userProfile?.createdAt ? new Date(userProfile.createdAt).toLocaleDateString() : 'Unknown'}
-                  </p>
-                </div>
               </div>
             )}
           </CardContent>
