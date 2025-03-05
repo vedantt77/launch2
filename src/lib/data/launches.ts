@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Launch } from '../types/launch';
 
@@ -522,10 +522,16 @@ export async function getLaunches(): Promise<Launch[]> {
     
     const approvedLaunches: Launch[] = [];
     
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
+    for (const docSnapshot of querySnapshot.docs) {
+      const data = docSnapshot.data();
+      
+      // Get upvotes data
+      const launchRef = doc(db, 'launches', docSnapshot.id);
+      const launchDoc = await getDoc(launchRef);
+      const upvoteData = launchDoc.exists() ? launchDoc.data() : { upvotes: 0, upvotedBy: [] };
+
       approvedLaunches.push({
-        id: doc.id,
+        id: docSnapshot.id,
         name: data.name,
         logo: data.logoUrl,
         description: data.description,
@@ -533,12 +539,29 @@ export async function getLaunches(): Promise<Launch[]> {
         website: data.url,
         category: data.category || 'New Launch',
         listingType: data.listingType || 'regular',
-        doFollowBacklink: true
+        doFollowBacklink: true,
+        upvotes: upvoteData.upvotes || 0,
+        upvotedBy: upvoteData.upvotedBy || []
       });
-    });
+    }
+
+    // Add upvotes data to static launches
+    const staticLaunchesWithUpvotes = await Promise.all(
+      staticLaunches.map(async (launch) => {
+        const launchRef = doc(db, 'launches', launch.id);
+        const launchDoc = await getDoc(launchRef);
+        const upvoteData = launchDoc.exists() ? launchDoc.data() : { upvotes: 0, upvotedBy: [] };
+        
+        return {
+          ...launch,
+          upvotes: upvoteData.upvotes || 0,
+          upvotedBy: upvoteData.upvotedBy || []
+        };
+      })
+    );
 
     // Combine static and approved launches
-    return [...staticLaunches, ...approvedLaunches];
+    return [...staticLaunchesWithUpvotes, ...approvedLaunches];
   } catch (error) {
     console.error('Error fetching launches:', error);
     return staticLaunches;
