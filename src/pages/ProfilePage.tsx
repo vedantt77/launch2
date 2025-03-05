@@ -44,6 +44,14 @@ interface UserProfile {
   updatedAt: Date;
 }
 
+interface ProfileFormData {
+  displayName: string;
+  username: string;
+  email: string;
+  bio: string;
+  avatar?: FileList;
+}
+
 export function ProfilePage() {
   const { user } = useAuthContext();
   const { toast } = useToast();
@@ -54,24 +62,23 @@ export function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [usernameError, setUsernameError] = useState('');
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<StartupFormData>();
+  const { register, handleSubmit, formState: { errors }, reset, watch } = useForm<StartupFormData>();
+  const { register: registerProfile, handleSubmit: handleSubmitProfile, formState: { errors: profileErrors }, setValue } = useForm<ProfileFormData>();
 
-  // Function to calculate next available launch date
-  const calculateNextLaunchDate = () => {
-    const now = new Date();
-    const nextSunday = new Date(now);
-    nextSunday.setDate(now.getDate() + (7 - now.getDay()));
-    nextSunday.setHours(0, 0, 0, 0);
-    
-    if (now.getDay() > 3) {
-      nextSunday.setDate(nextSunday.getDate() + 7);
+  const validateUsername = async (username: string) => {
+    if (username === userProfile?.username) return true;
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+      return 'Username must be 3-20 characters and can only contain letters, numbers, and underscores';
     }
-    
-    return nextSunday;
+    const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
+    if (usernameDoc.exists()) {
+      return 'Username is already taken';
+    }
+    return true;
   };
 
-  // Fetch user profile and startup data
   useEffect(() => {
     async function fetchData() {
       if (!user) return;
@@ -80,7 +87,14 @@ export function ProfilePage() {
         // Fetch user profile
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists()) {
-          setUserProfile(userDoc.data() as UserProfile);
+          const profileData = userDoc.data() as UserProfile;
+          setUserProfile(profileData);
+          
+          // Set form values
+          setValue('displayName', profileData.displayName);
+          setValue('username', profileData.username);
+          setValue('email', profileData.email);
+          setValue('bio', profileData.bio || '');
         }
 
         // Fetch startup data
@@ -111,19 +125,28 @@ export function ProfilePage() {
     }
 
     fetchData();
-  }, [user, toast]);
+  }, [user, toast, setValue]);
 
-  const handleProfileUpdate = async (formData: any) => {
+  const handleProfileUpdate = async (formData: ProfileFormData) => {
     if (!user || !userProfile) return;
 
     setIsSubmitting(true);
+    setUsernameError('');
+
     try {
+      // Validate username
+      const usernameValidation = await validateUsername(formData.username);
+      if (typeof usernameValidation === 'string') {
+        setUsernameError(usernameValidation);
+        return;
+      }
+
       let avatarUrl = userProfile.avatarUrl;
 
       // Handle avatar upload if a new file is selected
       if (formData.avatar?.length > 0) {
         const file = formData.avatar[0];
-        if (file.size > 500 * 1024) { // 500KB limit
+        if (file.size > 500 * 1024) {
           throw new Error('Avatar file size must be less than 500KB');
         }
 
@@ -134,21 +157,27 @@ export function ProfilePage() {
         avatarUrl = await getDownloadURL(avatarRef);
       }
 
+      // Update username in the usernames collection
+      if (formData.username !== userProfile.username) {
+        // Remove old username
+        await setDoc(doc(db, 'usernames', userProfile.username), { uid: null }, { merge: true });
+        // Add new username
+        await setDoc(doc(db, 'usernames', formData.username), { uid: user.uid });
+      }
+
       // Update user profile
-      await setDoc(doc(db, 'users', user.uid), {
+      const updatedProfile = {
         ...userProfile,
         displayName: formData.displayName,
+        username: formData.username,
+        email: formData.email,
         bio: formData.bio,
         avatarUrl,
         updatedAt: new Date()
-      }, { merge: true });
+      };
 
-      setUserProfile(prev => ({
-        ...prev!,
-        displayName: formData.displayName,
-        bio: formData.bio,
-        avatarUrl: avatarUrl || prev!.avatarUrl
-      }));
+      await setDoc(doc(db, 'users', user.uid), updatedProfile);
+      setUserProfile(updatedProfile);
 
       toast({
         title: "Success",
@@ -166,6 +195,19 @@ export function ProfilePage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const calculateNextLaunchDate = () => {
+    const now = new Date();
+    const nextSunday = new Date(now);
+    nextSunday.setDate(now.getDate() + (7 - now.getDay()));
+    nextSunday.setHours(0, 0, 0, 0);
+    
+    if (now.getDay() > 3) {
+      nextSunday.setDate(nextSunday.getDate() + 7);
+    }
+    
+    return nextSunday;
   };
 
   const onSubmit = async (data: StartupFormData) => {
@@ -280,36 +322,71 @@ export function ProfilePage() {
           </CardHeader>
           <CardContent>
             {isEditingProfile ? (
-              <form onSubmit={handleSubmit(handleProfileUpdate)} className="space-y-4">
+              <form onSubmit={handleSubmitProfile(handleProfileUpdate)} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="displayName">Display Name</Label>
                   <Input
                     id="displayName"
-                    defaultValue={userProfile?.displayName}
-                    {...register('displayName', { required: true })}
+                    {...registerProfile('displayName', { required: 'Display name is required' })}
                   />
+                  {profileErrors.displayName && (
+                    <p className="text-sm text-destructive">{profileErrors.displayName.message}</p>
+                  )}
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    {...registerProfile('username', {
+                      required: 'Username is required',
+                      pattern: {
+                        value: /^[a-zA-Z0-9_]{3,20}$/,
+                        message: 'Username must be 3-20 characters and can only contain letters, numbers, and underscores'
+                      }
+                    })}
+                  />
+                  {(profileErrors.username || usernameError) && (
+                    <p className="text-sm text-destructive">
+                      {profileErrors.username?.message || usernameError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    {...registerProfile('email', { required: 'Email is required' })}
+                  />
+                  {profileErrors.email && (
+                    <p className="text-sm text-destructive">{profileErrors.email.message}</p>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="bio">Bio</Label>
                   <Textarea
                     id="bio"
-                    defaultValue={userProfile?.bio}
-                    {...register('bio')}
+                    {...registerProfile('bio')}
                     placeholder="Tell us about yourself..."
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="avatar">Profile Picture</Label>
                   <Input
                     id="avatar"
                     type="file"
                     accept="image/*"
-                    {...register('avatar')}
+                    {...registerProfile('avatar')}
                   />
                   <p className="text-xs text-muted-foreground">
                     Maximum file size: 500KB
                   </p>
                 </div>
+
                 <div className="flex justify-end gap-4">
                   <Button
                     type="submit"
@@ -321,20 +398,18 @@ export function ProfilePage() {
               </form>
             ) : (
               <div className="space-y-4">
-                <div>
-                  <Label>Email</Label>
-                  <p className="text-muted-foreground">{user.email}</p>
-                </div>
-                {userProfile?.bio && (
+                {userProfile?.bio ? (
                   <div>
                     <Label>Bio</Label>
                     <p className="text-muted-foreground">{userProfile.bio}</p>
                   </div>
+                ) : (
+                  <p className="text-muted-foreground italic">No bio provided</p>
                 )}
                 <div>
                   <Label>Member since</Label>
                   <p className="text-muted-foreground">
-                    {userProfile?.createdAt.toLocaleDateString()}
+                    {userProfile?.createdAt ? new Date(userProfile.createdAt).toLocaleDateString() : 'Unknown'}
                   </p>
                 </div>
               </div>
