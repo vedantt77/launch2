@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
-import { doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuthContext } from '@/providers/AuthProvider';
@@ -267,14 +267,15 @@ export function ProfilePage() {
         bio: formData.bio || '',
         avatarUrl,
         email: user.email,
-        updatedAt: new Date()
+        updatedAt: Timestamp.now()
       };
 
       await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
 
       setUserProfile(prev => ({
-        ...prev,
-        ...updatedProfile
+        ...prev!,
+        ...updatedProfile,
+        updatedAt: new Date()
       }));
 
       toast({
