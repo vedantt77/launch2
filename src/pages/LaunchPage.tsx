@@ -51,6 +51,29 @@ export function LaunchPage() {
     return weeklyLaunches.filter(launch => !launch.listingType || launch.listingType === 'regular');
   }, []);
 
+  // Get last week's winners
+  const lastWeekWinners = useMemo(() => {
+    // Get the start and end dates of last week
+    const now = new Date();
+    const lastWeekStart = new Date(now);
+    lastWeekStart.setDate(now.getDate() - now.getDay() - 7);
+    lastWeekStart.setHours(0, 0, 0, 0);
+    
+    const lastWeekEnd = new Date(lastWeekStart);
+    lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+    lastWeekEnd.setHours(23, 59, 59, 999);
+
+    // Filter launches from last week and sort by upvotes
+    const lastWeekLaunches = allLaunches.filter(launch => {
+      const launchDate = new Date(launch.launchDate);
+      return launchDate >= lastWeekStart && launchDate <= lastWeekEnd;
+    });
+
+    return lastWeekLaunches
+      .sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0))
+      .slice(0, 3);
+  }, [allLaunches]);
+
   // Function to get current rotation index based on timestamp
   const getCurrentRotationIndex = (listLength: number) => {
     if (listLength <= 1) return 0;
@@ -170,7 +193,7 @@ export function LaunchPage() {
           <WeeklyCountdownTimer />
 
           {/* Weekly launches with boosted listings */}
-          <div className="space-y-4">
+          <div className="space-y-4 mb-16">
             {insertBoostedLaunches(rotatedWeeklyLaunches).map((launch) => (
               <LaunchListItem 
                 key={launch.uniqueKey}
@@ -178,6 +201,37 @@ export function LaunchPage() {
               />
             ))}
           </div>
+
+          {/* Last Week's Winners */}
+          {lastWeekWinners.length > 0 && (
+            <div className="mt-20">
+              <h2 className="text-2xl font-bold text-center mb-8">
+                🏆 Last Week's Most Popular Launches
+              </h2>
+              <div className="space-y-4">
+                {lastWeekWinners.map((launch, index) => (
+                  <div key={launch.id} className="relative">
+                    {index === 0 && (
+                      <div className="absolute -top-4 left-4 bg-yellow-500 text-white px-3 py-1 rounded-full text-sm font-bold">
+                        🥇 1st Place
+                      </div>
+                    )}
+                    {index === 1 && (
+                      <div className="absolute -top-4 left-4 bg-gray-400 text-white px-3 py-1 rounded-full text-sm font-bold">
+                        🥈 2nd Place
+                      </div>
+                    )}
+                    {index === 2 && (
+                      <div className="absolute -top-4 left-4 bg-amber-700 text-white px-3 py-1 rounded-full text-sm font-bold">
+                        🥉 3rd Place
+                      </div>
+                    )}
+                    <LaunchListItem launch={launch} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
