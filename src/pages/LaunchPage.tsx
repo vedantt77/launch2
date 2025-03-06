@@ -84,6 +84,7 @@ export function LaunchPage() {
         uniqueKey: `weekly-regular-${launch.id}-${index}-${timestamp}`
       });
       
+      // Insert boosted launch after every 'spacing' number of regular launches
       if ((index + 1) % spacing === 0 && boostedIndex < rotatedBoostedLaunches.length) {
         const boostedLaunch = rotatedBoostedLaunches[boostedIndex];
         result.push({
@@ -94,10 +95,11 @@ export function LaunchPage() {
       }
     });
 
-    // Add any remaining boosted launches
+    // If there are remaining boosted launches, distribute them evenly in the remaining spaces
     while (boostedIndex < rotatedBoostedLaunches.length) {
+      const insertIndex = Math.floor((result.length / (rotatedBoostedLaunches.length - boostedIndex + 1)) * (boostedIndex + 1));
       const boostedLaunch = rotatedBoostedLaunches[boostedIndex];
-      result.push({
+      result.splice(insertIndex, 0, {
         ...boostedLaunch,
         uniqueKey: `weekly-boosted-${boostedLaunch.id}-remaining-${boostedIndex}-${timestamp}`
       });
