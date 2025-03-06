@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 
 interface StartupFormData {
   name: string;
@@ -50,6 +51,49 @@ interface ProfileFormData {
   bio?: string;
   avatar?: FileList;
 }
+
+const getStatusMessage = (status: string, scheduledLaunchDate?: Date) => {
+  switch (status) {
+    case 'pending':
+      return {
+        badge: {
+          variant: 'warning' as const,
+          text: 'Under Review'
+        },
+        message: "We've received your submission and our team is currently reviewing it. We'll notify you once the review is complete.",
+        details: "The review process typically takes 1-2 business days. We'll check your startup's information and ensure it meets our quality standards."
+      };
+    case 'approved':
+      return {
+        badge: {
+          variant: 'success' as const,
+          text: 'Approved'
+        },
+        message: scheduledLaunchDate 
+          ? `Your startup has been approved and is scheduled to launch on ${scheduledLaunchDate.toLocaleDateString()}!` 
+          : "Your startup has been approved!",
+        details: "Your startup will be featured on our platform according to your selected listing type. Make sure to share your launch with your network for maximum visibility."
+      };
+    case 'rejected':
+      return {
+        badge: {
+          variant: 'destructive' as const,
+          text: 'Not Approved'
+        },
+        message: "Unfortunately, we couldn't approve your startup submission at this time.",
+        details: "This could be due to incomplete information, quality concerns, or not meeting our current criteria. Feel free to submit again with updated information."
+      };
+    default:
+      return {
+        badge: {
+          variant: 'default' as const,
+          text: status
+        },
+        message: "Status unknown",
+        details: "Please contact support for more information."
+      };
+  };
+};
 
 export function ProfilePage() {
   const { user } = useAuthContext();
@@ -512,11 +556,6 @@ export function ProfilePage() {
               <CardTitle>Your Latest Submission</CardTitle>
               <CardDescription>
                 Submitted on {submittedStartup.submittedAt.toLocaleString()}
-                {submittedStartup.scheduledLaunchDate && (
-                  <span className="block text-primary">
-                    Scheduled to launch on {submittedStartup.scheduledLaunchDate.toLocaleDateString()}
-                  </span>
-                )}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -542,13 +581,25 @@ export function ProfilePage() {
                   </p>
                 </div>
               </div>
-              <div className="bg-muted/50 p-4 rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  Status: <span className="font-medium text-primary capitalize">{submittedStartup.status}</span>
-                </p>
-                <p className="text-sm mt-2">
-                  We'll review your submission and get back to you soon.
-                </p>
+              <div className="bg-muted/50 p-6 rounded-lg space-y-4">
+                <div className="flex items-center gap-3">
+                  <Badge variant={getStatusMessage(submittedStartup.status).badge.variant}>
+                    {getStatusMessage(submittedStartup.status).badge.text}
+                  </Badge>
+                  {submittedStartup.scheduledLaunchDate && submittedStartup.status === 'approved' && (
+                    <Badge variant="success">
+                      Launches {submittedStartup.scheduledLaunchDate.toLocaleDateString()}
+                    </Badge>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="font-medium text-foreground">
+                    {getStatusMessage(submittedStartup.status, submittedStartup.scheduledLaunchDate).message}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {getStatusMessage(submittedStartup.status).details}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
