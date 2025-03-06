@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { LaunchListItem } from '@/components/launch/LaunchListItem';
 import { PremiumListing } from '@/components/launch/PremiumListing';
 import { AnimatedHeader } from '@/components/launch/AnimatedHeader';
@@ -11,81 +11,29 @@ interface ListItem extends Launch {
 }
 
 const ROTATION_INTERVAL = 10 * 60 * 1000; // 10 minutes in milliseconds
-const PAGE_SIZE = 10;
 
 export function LaunchPage() {
   const [allLaunches, setAllLaunches] = useState<Launch[]>([]);
   const [rotatedWeeklyLaunches, setRotatedWeeklyLaunches] = useState<Launch[]>([]);
   const [rotatedBoostedLaunches, setRotatedBoostedLaunches] = useState<Launch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const lastDocRef = useRef<any>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadingRef = useRef<HTMLDivElement>(null);
   
-  // Fetch initial launches
+  // Fetch launches on component mount
   useEffect(() => {
-    const fetchInitialLaunches = async () => {
+    const fetchLaunches = async () => {
       try {
-        const { launches, lastVisible } = await getLaunches(null, PAGE_SIZE);
+        // Only fetch launches once and store them in state
+        const launches = await getLaunches();
         setAllLaunches(launches);
-        lastDocRef.current = lastVisible;
-        setHasMore(!!lastVisible);
         setIsLoading(false);
       } catch (error) {
-        console.error('Error fetching initial launches:', error);
+        console.error('Error fetching launches:', error);
         setIsLoading(false);
       }
     };
 
-    fetchInitialLaunches();
+    fetchLaunches();
   }, []);
-
-  // Infinite scroll handler
-  const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore) return;
-
-    setIsLoadingMore(true);
-    try {
-      const { launches, lastVisible } = await getLaunches(lastDocRef.current, PAGE_SIZE);
-      
-      if (launches.length < PAGE_SIZE) {
-        setHasMore(false);
-      }
-
-      setAllLaunches(prev => [...prev, ...launches]);
-      lastDocRef.current = lastVisible;
-    } catch (error) {
-      console.error('Error loading more launches:', error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [isLoadingMore, hasMore]);
-
-  // Set up intersection observer
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (loadingRef.current) {
-      observer.observe(loadingRef.current);
-    }
-
-    observerRef.current = observer;
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [loadMore, hasMore, isLoadingMore]);
   
   // Memoize filtered launches
   const premiumLaunches = useMemo(() => 
@@ -98,13 +46,14 @@ export function LaunchPage() {
     [allLaunches]
   );
 
-  const weeklyLaunches = useMemo(() => 
-    allLaunches.filter(launch => !launch.listingType || launch.listingType === 'regular'),
-    [allLaunches]
-  );
+  const weeklyLaunches = useMemo(async () => {
+    const weeklyLaunches = await getWeeklyLaunches();
+    return weeklyLaunches.filter(launch => !launch.listingType || launch.listingType === 'regular');
+  }, []);
 
   // Get last week's winners
   const lastWeekWinners = useMemo(() => {
+    // Get the start and end dates of last week
     const now = new Date();
     const lastWeekStart = new Date(now);
     lastWeekStart.setDate(now.getDate() - now.getDay() - 7);
@@ -114,6 +63,7 @@ export function LaunchPage() {
     lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
     lastWeekEnd.setHours(23, 59, 59, 999);
 
+    // Filter launches from last week and sort by upvotes
     const lastWeekLaunches = allLaunches.filter(launch => {
       const launchDate = new Date(launch.launchDate);
       return launchDate >= lastWeekStart && launchDate <= lastWeekEnd;
@@ -157,6 +107,7 @@ export function LaunchPage() {
         uniqueKey: `weekly-regular-${launch.id}-${index}-${timestamp}`
       });
       
+      // Insert boosted launch after every 'spacing' number of regular launches
       if ((index + 1) % spacing === 0 && boostedIndex < rotatedBoostedLaunches.length) {
         const boostedLaunch = rotatedBoostedLaunches[boostedIndex];
         result.push({
@@ -167,6 +118,7 @@ export function LaunchPage() {
       }
     });
 
+    // If there are remaining boosted launches, distribute them evenly in the remaining spaces
     while (boostedIndex < rotatedBoostedLaunches.length) {
       const insertIndex = Math.floor((result.length / (rotatedBoostedLaunches.length - boostedIndex + 1)) * (boostedIndex + 1));
       const boostedLaunch = rotatedBoostedLaunches[boostedIndex];
@@ -182,11 +134,12 @@ export function LaunchPage() {
 
   // Update rotations based on current time
   useEffect(() => {
-    const updateRotations = () => {
-      const weeklyIndex = getCurrentRotationIndex(weeklyLaunches.length);
+    const updateRotations = async () => {
+      const weeklyLaunchList = await weeklyLaunches;
+      const weeklyIndex = getCurrentRotationIndex(weeklyLaunchList.length);
       const boostedIndex = getCurrentRotationIndex(boostedLaunches.length);
 
-      setRotatedWeeklyLaunches(rotateArrayByIndex(weeklyLaunches, weeklyIndex));
+      setRotatedWeeklyLaunches(rotateArrayByIndex(weeklyLaunchList, weeklyIndex));
       setRotatedBoostedLaunches(rotateArrayByIndex(boostedLaunches, boostedIndex));
     };
 
@@ -248,20 +201,6 @@ export function LaunchPage() {
               />
             ))}
           </div>
-
-          {/* Loading indicator */}
-          {hasMore && (
-            <div 
-              ref={loadingRef} 
-              className="flex justify-center py-4"
-            >
-              {isLoadingMore ? (
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              ) : (
-                <div className="h-8"></div>
-              )}
-            </div>
-          )}
 
           {/* Last Week's Winners */}
           {lastWeekWinners.length > 0 && (
