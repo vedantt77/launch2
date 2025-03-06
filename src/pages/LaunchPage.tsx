@@ -155,8 +155,6 @@ export function LaunchPage() {
             Submit today and receive quality traffic and backlink! Our unique rotation system ensures equal exposure for all startups by rotating listings every 10 minutes - no upvotes needed. 🔄✨
           </h2>
 
-          <WeeklyCountdownTimer />
-
           {/* Premium listings */}
           <div className="space-y-8 mb-12">
             {premiumLaunches.map((launch) => (
@@ -166,6 +164,8 @@ export function LaunchPage() {
               />
             ))}
           </div>
+
+          <WeeklyCountdownTimer />
 
           {/* Weekly launches with boosted listings */}
           <div className="space-y-4">
