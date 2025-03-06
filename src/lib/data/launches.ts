@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, orderBy, limit, startAfter } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Launch } from '../types/launch';
 
@@ -513,12 +513,30 @@ export const staticLaunches: Launch[] = [
 ];
 
 // Function to get all launches including approved ones from Firestore
-export async function getLaunches(): Promise<Launch[]> {
+export async function getLaunches(lastDoc?: any, pageSize: number = 10): Promise<{launches: Launch[], lastVisible: any}> {
   try {
     // Get approved startups from Firestore
     const startupsRef = collection(db, 'startups');
-    const q = query(startupsRef, where('status', '==', 'approved'));
+    let q = query(
+      startupsRef, 
+      where('status', '==', 'approved'),
+      orderBy('scheduledLaunchDate', 'desc'),
+      limit(pageSize)
+    );
+
+    // If there's a last document, start after it
+    if (lastDoc) {
+      q = query(
+        startupsRef,
+        where('status', '==', 'approved'),
+        orderBy('scheduledLaunchDate', 'desc'),
+        startAfter(lastDoc),
+        limit(pageSize)
+      );
+    }
+
     const querySnapshot = await getDocs(q);
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
     
     const approvedLaunches: Launch[] = [];
     
@@ -561,32 +579,87 @@ export async function getLaunches(): Promise<Launch[]> {
     );
 
     // Combine static and approved launches
-    return [...staticLaunchesWithUpvotes, ...approvedLaunches];
+    return {
+      launches: [...staticLaunchesWithUpvotes, ...approvedLaunches],
+      lastVisible
+    };
   } catch (error) {
     console.error('Error fetching launches:', error);
-    return staticLaunches;
+    return {
+      launches: staticLaunches,
+      lastVisible: null
+    };
   }
 }
 
 // Function to get weekly launches
-export async function getWeeklyLaunches(): Promise<Launch[]> {
-  const launches = await getLaunches();
-  
-  // Get current date
-  const now = new Date();
-  
-  // Find the start of the current week (Sunday at 00:00:00)
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-  
-  // Find the end of the week (Saturday at 23:59:59)
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
-  
-  return launches.filter(launch => {
-    const launchDate = new Date(launch.launchDate);
-    return launchDate >= startOfWeek && launchDate <= endOfWeek;
-  });
+export async function getWeeklyLaunches(lastDoc?: any, pageSize: number = 10): Promise<{launches: Launch[], lastVisible: any}> {
+  try {
+    // Get current date
+    const now = new Date();
+    
+    // Find the start of the current week (Sunday at 00:00:00)
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    // Find the end of the week (Saturday at 23:59:59)
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    // Query for weekly launches
+    const startupsRef = collection(db, 'startups');
+    let q = query(
+      startupsRef,
+      where('status', '==', 'approved'),
+      where('scheduledLaunchDate', '>=', startOfWeek),
+      where('scheduledLaunchDate', '<=', endOfWeek),
+      orderBy('scheduledLaunchDate', 'desc'),
+      limit(pageSize)
+    );
+
+    if (lastDoc) {
+      q = query(
+        startupsRef,
+        where('status', '==', 'approved'),
+        where('scheduledLaunchDate', '>=', startOfWeek),
+        where('scheduledLaunchDate', '<=', endOfWeek),
+        orderBy('scheduledLaunchDate', 'desc'),
+        startAfter(lastDoc),
+        limit(pageSize)
+      );
+    }
+
+    const querySnapshot = await getDocs(q);
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
+
+    const weeklyLaunches: Launch[] = [];
+    
+    for (const docSnapshot of querySnapshot.docs) {
+      const data = docSnapshot.data();
+      weeklyLaunches.push({
+        id: docSnapshot.id,
+        name: data.name,
+        logo: data.logoUrl,
+        description: data.description,
+        launchDate: data.scheduledLaunchDate.toDate().toISOString(),
+        website: data.url,
+        category: data.category || 'New Launch',
+        listingType: data.listingType || 'regular',
+        doFollowBacklink: true
+      });
+    }
+
+    return {
+      launches: weeklyLaunches,
+      lastVisible
+    };
+  } catch (error) {
+    console.error('Error fetching weekly launches:', error);
+    return {
+      launches: [],
+      lastVisible: null
+    };
+  }
 }
